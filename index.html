@@ -816,7 +816,6 @@
                     onEachFeature: function(feature, layer) {
                         const provName = normalizeProvName(feature.properties.name);
                         
-                        // sticky: true 유지하여 마우스를 따라다니게 합니다.
                         layer.bindTooltip(provName, { sticky: true, direction: 'center', className: 'province-tooltip' });
                         
                         layer.on({
@@ -827,6 +826,9 @@
                                 if (selectedProvinces.includes(provName)) e.target.setStyle(styleSelected);
                                 else provinceGeoJsonLayer.resetStyle(e.target);
                             },
+                            // ==========================================
+                            // [핵심 수정 1] 지도에서 지역 클릭 시 필터 목록을 갱신하도록 호출 추가
+                            // ==========================================
                             click: function(e) {
                                 L.DomEvent.stopPropagation(e);
                                 if (selectedProvinces.includes(provName)) { 
@@ -837,19 +839,14 @@
                                     e.target.setStyle(styleSelected); 
                                 }
                                 
-                                renderRegionTags(); updateUI();
+                                renderRegionTags(); 
+                                updateDynamicFilters(); // 이 부분이 빠져있었습니다!
+                                updateUI();
                                 if(document.getElementById('searchDropdown').classList.contains('active')) renderDropdown();
 
-                                // [핵심 해결 코드: 튀는 현상 완벽 방지]
-                                // updateUI()가 실행되면서 Leaflet의 DOM 트리 재구성(bringToBack 등)이 발생하고, 
-                                // 이 때문에 툴팁이 중앙으로 초기화됩니다.
-                                // 렌더링 사이클이 완전히 끝난 직후(setTimeout 0), 사용자가 클릭했던 마우스 좌표로 
-                                // 라벨 위치를 덮어씌워서 튀는 현상을 막고 자연스럽게 유지되도록 합니다.
                                 const tooltip = e.target.getTooltip();
                                 if (tooltip && tooltip.isOpen() && e.latlng) {
-                                    setTimeout(() => {
-                                        tooltip.setLatLng(e.latlng);
-                                    }, 0);
+                                    setTimeout(() => { tooltip.setLatLng(e.latlng); }, 0);
                                 }
                             }
                         });
@@ -902,6 +899,9 @@
             if(document.getElementById('searchDropdown').classList.contains('active')) renderDropdown();
         }
 
+        // ==========================================
+        // [핵심 수정 2] X버튼으로 지역을 해제할 때도 필터 목록을 갱신하도록 호출 추가
+        // ==========================================
         window.toggleProvince = function(provName) {
             if (selectedProvinces.includes(provName)) selectedProvinces = selectedProvinces.filter(p => p !== provName);
             if (provinceGeoJsonLayer) {
@@ -910,7 +910,9 @@
                     if (selectedProvinces.includes(name)) layer.setStyle(styleSelected); else layer.setStyle(styleDefault);
                 });
             }
-            renderRegionTags(); updateUI();
+            renderRegionTags(); 
+            updateDynamicFilters(); // 이 부분이 빠져있었습니다!
+            updateUI();
             if(document.getElementById('searchDropdown').classList.contains('active')) renderDropdown();
         }
 
@@ -922,7 +924,11 @@
 
         function updateDynamicFilters() {
             let availableParts = new Set(); let availableTypes = new Set(); let availableGroups = new Set(); let availableOwners = new Set();
+            
             powerPlantsData.forEach(p => {
+                const matchProv = selectedProvinces.length === 0 || selectedProvinces.includes(p.region);
+                if (!matchProv) return; 
+
                 p.rows.forEach(r => {
                     let rTypes = []; let rawTypeStr = String(r['제도'] || r['참여제도'] || r['제어방식'] || r['구분'] || '');
                     if (rawTypeStr.includes('준중앙')) rTypes.push('준중앙'); if (rawTypeStr.includes('예측')) rTypes.push('예측'); if (rawTypeStr.includes('입찰')) rTypes.push('입찰');
