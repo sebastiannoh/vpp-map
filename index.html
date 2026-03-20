@@ -24,7 +24,7 @@
 
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: 'Pretendard', sans-serif; overflow: hidden; background: #F4F5F6; }
 
-        /* ----- [추가] 로그인 오버레이 (덮개) ----- */
+        /* ----- 로그인 오버레이 (덮개) ----- */
         #login-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(18, 18, 18, 0.95); z-index: 9999;
@@ -502,16 +502,13 @@
 
     <script>
         // ==========================================
-        // [추가] 1. 구글 로그인 및 권한 관리 세팅
+        // 1. 구글 로그인 및 권한 관리 세팅
         // ==========================================
         
-        // ⚠️ 관리자님: 구글 클라우드 콘솔에서 발급받은 실제 Client ID로 변경해 주세요!
         const GOOGLE_CLIENT_ID = "667440239133-mbmt3gcqnv2r4op0uee7n0n49m475vof.apps.googleusercontent.com"; 
         
-        // 권한 관리 구글 시트의 CSV 발행 주소
-        const PERMISSION_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5fSYSZIyzXFINIfl2BP2_3UEq6XD7RaXKzzlbuy-RQTrfQgdTYx1adlC3R_2qM9mKvuDEsyXDzzK3/pub?gid=1123167750&single=true&output=csv&t=' + new Date().getTime();
+        const PERMISSION_CSV_URL = 'https://docs.google.com/spreadsheets/d/1KwaB74gHPI_c6SJ9l_n9nMZzF5jMdn4FYMbzYcerl_s/pub?gid=1123167750&single=true&output=csv&t=' + new Date().getTime();
         
-        // 실제 발전소 데이터 리스트 구글 시트 링크
         const DATA_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1KwaB74gHPI_c6SJ9l_n9nMZzF5jMdn4FYMbzYcerl_s/edit?gid=0#gid=0';
 
         let currentUserRole = null; // '편집자', '뷰어', null
@@ -544,9 +541,9 @@
             const userEmail = responsePayload.email;
             const errorMsgEl = document.getElementById('loginErrorMsg');
 
-            // 1. 도메인 확인
-            if (!userEmail.endsWith('@haezoom.com')) {
-                errorMsgEl.innerText = '해줌 사내 계정(@haezoom.com)으로만 접근할 수 있습니다.';
+            // 1. 도메인 확인 (@haezoom.com 및 @idnstory.com 모두 허용)
+            if (!userEmail.endsWith('@haezoom.com') && !userEmail.endsWith('@idnstory.com')) {
+                errorMsgEl.innerText = '해줌 사내 계정(@haezoom.com 또는 @idnstory.com)으로만 접근할 수 있습니다.';
                 return;
             }
 
