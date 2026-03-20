@@ -11,8 +11,9 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
-    
     <link rel="stylesheet" href="https://unpkg.com/leaflet-velocity@1.6.0/dist/leaflet-velocity.min.css" />
+
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 
     <style>
         :root {
@@ -22,6 +23,23 @@
         }
 
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: 'Pretendard', sans-serif; overflow: hidden; background: #F4F5F6; }
+
+        /* ----- [추가] 로그인 오버레이 (덮개) ----- */
+        #login-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(18, 18, 18, 0.95); z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); color: var(--text-main);
+            transition: opacity 0.5s ease-in-out;
+        }
+        .login-box {
+            background: rgba(30, 30, 30, 0.8); border: 1px solid var(--border);
+            padding: 40px; border-radius: 16px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+            display: flex; flex-direction: column; align-items: center; gap: 20px;
+        }
+        .login-title { font-size: 24px; font-weight: 800; color: var(--primary); }
+        .login-desc { font-size: 14px; color: var(--text-sub); line-height: 1.5; margin-bottom: 10px; }
+        #loginErrorMsg { color: #FF6B6B; font-size: 13px; font-weight: 600; margin-top: 10px; min-height: 16px; }
 
         /* ----- 지도 영역 ----- */
         #map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; background: #F4F5F6; transition: opacity 0.25s ease-in-out; }
@@ -295,6 +313,17 @@
 </head>
 
 <body>
+    <div id="login-overlay">
+        <div class="login-box">
+            <div class="login-title">해줌 VPP Map</div>
+            <div class="login-desc">사내 데이터 보안을 위해<br>@haezoom.com 구글 계정으로 로그인해 주세요.</div>
+            
+            <div id="googleSignInBtn"></div>
+            
+            <div id="loginErrorMsg"></div>
+        </div>
+    </div>
+
     <div id="map"></div>
 
     <div id="weather-btn-container">
@@ -314,8 +343,7 @@
                             <span class="material-icons-round" id="refreshIcon">refresh</span>
                             <span>데이터 갱신</span>
                         </button>
-                        <a href="https://docs.google.com/spreadsheets/d/1KwaB74gHPI_c6SJ9l_n9nMZzF5jMdn4FYMbzYcerl_s/edit?gid=0#gid=0" 
-                           target="_blank" class="list-link" title="구글 스프레드시트 열기">
+                        <a id="sheetLinkBtn" class="list-link" title="구글 스프레드시트 열기" style="cursor: pointer;">
                             <span class="material-icons-round">open_in_new</span>
                             <span>발전소 리스트</span>
                         </a>
@@ -473,6 +501,106 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
     <script>
+        // ==========================================
+        // [추가] 1. 구글 로그인 및 권한 관리 세팅
+        // ==========================================
+        
+        // ⚠️ 관리자님: 구글 클라우드 콘솔에서 발급받은 실제 Client ID로 변경해 주세요!
+        const GOOGLE_CLIENT_ID = "667440239133-mbmt3gcqnv2r4op0uee7n0n49m475vof.apps.googleusercontent.com"; 
+        
+        // 권한 관리 구글 시트의 CSV 발행 주소
+        const PERMISSION_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5fSYSZIyzXFINIfl2BP2_3UEq6XD7RaXKzzlbuy-RQTrfQgdTYx1adlC3R_2qM9mKvuDEsyXDzzK3/pub?gid=1123167750&single=true&output=csv&t=' + new Date().getTime();
+        
+        // 실제 발전소 데이터 리스트 구글 시트 링크
+        const DATA_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1KwaB74gHPI_c6SJ9l_n9nMZzF5jMdn4FYMbzYcerl_s/edit?gid=0#gid=0';
+
+        let currentUserRole = null; // '편집자', '뷰어', null
+
+        window.onload = function () {
+            // 구글 로그인 버튼 렌더링
+            google.accounts.id.initialize({
+                client_id: GOOGLE_CLIENT_ID,
+                callback: handleCredentialResponse
+            });
+            google.accounts.id.renderButton(
+                document.getElementById("googleSignInBtn"),
+                { theme: "outline", size: "large", type: "standard", shape: "rectangular" }
+            );
+        };
+
+        // JWT 토큰 디코딩 함수
+        function decodeJwtResponse(token) {
+            let base64Url = token.split('.')[1];
+            let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            let jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            return JSON.parse(jsonPayload);
+        }
+
+        // 로그인 결과 처리 함수
+        function handleCredentialResponse(response) {
+            const responsePayload = decodeJwtResponse(response.credential);
+            const userEmail = responsePayload.email;
+            const errorMsgEl = document.getElementById('loginErrorMsg');
+
+            // 1. 도메인 확인
+            if (!userEmail.endsWith('@haezoom.com')) {
+                errorMsgEl.innerText = '해줌 사내 계정(@haezoom.com)으로만 접근할 수 있습니다.';
+                return;
+            }
+
+            errorMsgEl.innerText = '권한을 확인 중입니다...';
+
+            // 2. 권한 시트 확인
+            Papa.parse(PERMISSION_CSV_URL, {
+                download: true,
+                header: true,
+                complete: function(results) {
+                    let userFound = false;
+                    for (let i = 0; i < results.data.length; i++) {
+                        const row = results.data[i];
+                        if (row['이메일'] && row['이메일'].trim() === userEmail) {
+                            currentUserRole = row['권한'].trim();
+                            userFound = true;
+                            break;
+                        }
+                    }
+
+                    if (!userFound) {
+                        // 명단에 없는 경우
+                        errorMsgEl.innerText = '등록된 사용자가 아닙니다. VPP 부문 관리자에게 문의해 주세요.';
+                    } else {
+                        // 편집자 또는 뷰어 접속 통과
+                        document.getElementById('login-overlay').style.opacity = '0';
+                        setTimeout(() => { document.getElementById('login-overlay').style.display = 'none'; }, 500);
+                        
+                        setupSheetLinkButton();
+                    }
+                },
+                error: function(err) {
+                    errorMsgEl.innerText = '권한 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.';
+                }
+            });
+        }
+
+        // 3. 버튼 권한 세팅 함수
+        function setupSheetLinkButton() {
+            const btn = document.getElementById('sheetLinkBtn');
+            btn.onclick = function(e) {
+                if (currentUserRole === '편집자') {
+                    window.open(DATA_SHEET_URL, '_blank');
+                } else if (currentUserRole === '뷰어') {
+                    e.preventDefault();
+                    alert('접근 권한이 없습니다. (지도 조회 권한만 부여됨)');
+                }
+            };
+        }
+
+        // ==========================================
+        // 2. 기존 지도 및 기능 로직 시작
+        // ==========================================
+
         let powerPlantsData = [];
         let activeSystems = ['준중앙', '예측', '입찰']; 
         let selectedProvinces = []; 
@@ -826,9 +954,6 @@
                                 if (selectedProvinces.includes(provName)) e.target.setStyle(styleSelected);
                                 else provinceGeoJsonLayer.resetStyle(e.target);
                             },
-                            // ==========================================
-                            // [핵심 수정 1] 지도에서 지역 클릭 시 필터 목록을 갱신하도록 호출 추가
-                            // ==========================================
                             click: function(e) {
                                 L.DomEvent.stopPropagation(e);
                                 if (selectedProvinces.includes(provName)) { 
@@ -840,7 +965,7 @@
                                 }
                                 
                                 renderRegionTags(); 
-                                updateDynamicFilters(); // 이 부분이 빠져있었습니다!
+                                updateDynamicFilters();
                                 updateUI();
                                 if(document.getElementById('searchDropdown').classList.contains('active')) renderDropdown();
 
@@ -899,9 +1024,6 @@
             if(document.getElementById('searchDropdown').classList.contains('active')) renderDropdown();
         }
 
-        // ==========================================
-        // [핵심 수정 2] X버튼으로 지역을 해제할 때도 필터 목록을 갱신하도록 호출 추가
-        // ==========================================
         window.toggleProvince = function(provName) {
             if (selectedProvinces.includes(provName)) selectedProvinces = selectedProvinces.filter(p => p !== provName);
             if (provinceGeoJsonLayer) {
@@ -911,7 +1033,7 @@
                 });
             }
             renderRegionTags(); 
-            updateDynamicFilters(); // 이 부분이 빠져있었습니다!
+            updateDynamicFilters();
             updateUI();
             if(document.getElementById('searchDropdown').classList.contains('active')) renderDropdown();
         }
