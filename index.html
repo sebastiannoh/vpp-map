@@ -17,7 +17,7 @@
 
     <style>
         :root {
-            --color-jun: #00E676; --color-pre: #2979FF; --color-bid: #FF9100; --stat-color: #1DD1A1; 
+            --color-jun: #00E676; --color-pre: #2979FF; --color-bid: #FF9100; --color-dist: #FF3B30; --stat-color: #1DD1A1; 
             --primary: #20BEFF; --dark-bg: #121212; --dark-surface: #1E1E1E; --sidebar-width: 440px; 
             --text-main: #FFFFFF; --text-sub: #C4C4C4; --border: rgba(255, 255, 255, 0.1);
         }
@@ -361,6 +361,7 @@
                     <button class="sys-btn active" onclick="toggleFilter(this, '준중앙')">준중앙</button>
                     <button class="sys-btn active" onclick="toggleFilter(this, '예측')">예측</button>
                     <button class="sys-btn active" onclick="toggleFilter(this, '입찰')">입찰</button>
+                    <button class="sys-btn active" onclick="toggleFilter(this, '배전망')">배전망</button>
                 </div>
             </div>
 
@@ -599,7 +600,7 @@
         // ==========================================
 
         let powerPlantsData = [];
-        let activeSystems = ['준중앙', '예측', '입찰']; 
+        let activeSystems = ['준중앙', '예측', '입찰', '배전망']; 
         let selectedProvinces = []; 
         let selectedParts = []; 
         let selectedTypes = [];
@@ -610,7 +611,7 @@
         let barChartInstance = null; let scatterChartInstance = null; 
         let currentSearchRegion = '전체'; 
         
-        const COLOR_JUN = '#00E676', COLOR_PRE = '#2979FF', COLOR_BID = '#FF9100', COLOR_STAT = '#1DD1A1'; 
+        const COLOR_JUN = '#00E676', COLOR_PRE = '#2979FF', COLOR_BID = '#FF9100', COLOR_DIST = '#FF3B30', COLOR_STAT = '#1DD1A1'; 
         let markerInstances = {};
 
         function isRowMatching(r) {
@@ -619,6 +620,8 @@
             if (rawTypeStr.includes('준중앙')) rTypes.push('준중앙');
             if (rawTypeStr.includes('예측')) rTypes.push('예측');
             if (rawTypeStr.includes('입찰')) rTypes.push('입찰');
+            if (rawTypeStr.includes('배전망')) rTypes.push('배전망'); 
+            
             if (rTypes.length === 0) rTypes = ['준중앙'];
 
             const matchSys = rTypes.some(t => activeSystems.includes(t));
@@ -681,6 +684,7 @@
                     <div class="legend-item"><div class="legend-color" style="background-color: var(--color-jun);"></div> 준중앙</div>
                     <div class="legend-item"><div class="legend-color" style="background-color: var(--color-pre);"></div> 예측</div>
                     <div class="legend-item"><div class="legend-color" style="background-color: var(--color-bid);"></div> 입찰</div>
+                    <div class="legend-item"><div class="legend-color" style="background-color: var(--color-dist);"></div> 배전망</div>
                 `;
                 L.DomEvent.disableClickPropagation(div); 
                 return div;
@@ -1050,7 +1054,10 @@
 
                 p.rows.forEach(r => {
                     let rTypes = []; let rawTypeStr = String(r['제도'] || r['참여제도'] || r['제어방식'] || r['구분'] || '');
-                    if (rawTypeStr.includes('준중앙')) rTypes.push('준중앙'); if (rawTypeStr.includes('예측')) rTypes.push('예측'); if (rawTypeStr.includes('입찰')) rTypes.push('입찰');
+                    if (rawTypeStr.includes('준중앙')) rTypes.push('준중앙'); 
+                    if (rawTypeStr.includes('예측')) rTypes.push('예측'); 
+                    if (rawTypeStr.includes('입찰')) rTypes.push('입찰');
+                    if (rawTypeStr.includes('배전망')) rTypes.push('배전망');
                     if (rTypes.length === 0) rTypes = ['준중앙'];
 
                     const matchSys = rTypes.some(t => activeSystems.includes(t));
@@ -1111,6 +1118,7 @@
                         if (rawTypeStr.includes('준중앙')) assignedTypes.push('준중앙');
                         if (rawTypeStr.includes('예측')) assignedTypes.push('예측');
                         if (rawTypeStr.includes('입찰')) assignedTypes.push('입찰');
+                        if (rawTypeStr.includes('배전망')) assignedTypes.push('배전망');
                         if (assignedTypes.length === 0) assignedTypes = ['준중앙']; 
 
                         if (plantsMap.has(plantName)) {
@@ -1295,7 +1303,11 @@
 
         function getActiveColor(typesArray) {
             const activeType = typesArray.find(t => activeSystems.includes(t)) || typesArray[0];
-            if (activeType === '준중앙') return COLOR_JUN; if (activeType === '예측') return COLOR_PRE; if (activeType === '입찰') return COLOR_BID; return '#A0A0A0';
+            if (activeType === '준중앙') return COLOR_JUN; 
+            if (activeType === '예측') return COLOR_PRE; 
+            if (activeType === '입찰') return COLOR_BID; 
+            if (activeType === '배전망') return COLOR_DIST;
+            return '#A0A0A0';
         }
 
         function updateUI() {
@@ -1393,8 +1405,12 @@
 
             if (provinceGeoJsonLayer) provinceGeoJsonLayer.bringToBack();
 
-            const totalCount = dashboardData.length;
-            const totalCap = dashboardData.reduce((sum, p) => sum + p.capacity, 0);
+            // 💡 [수정 내용] 개소수 및 주소정제 통계, 차트에는 '배전망'을 포함하고, '총 설비용량' 계산에서만 제외합니다.
+            const totalCount = dashboardData.length; // 배전망 포함 전체 개소수
+            
+            // 설비용량은 실제 발전소만 합산
+            const capacityPlantsData = dashboardData.filter(p => !p.types.includes('배전망'));
+            const totalCap = capacityPlantsData.reduce((sum, p) => sum + p.capacity, 0);
             
             document.getElementById('sumCount').textContent = totalCount.toLocaleString() + ' 개소';
             if (totalCap >= 1000) document.getElementById('sumCapacity').textContent = (totalCap / 1000).toLocaleString(undefined, {maximumFractionDigits:1}) + ' MW';
@@ -1412,12 +1428,15 @@
             let failPct = totalCount > 0 ? (100 - succPct) : 0;
 
             document.getElementById('addrSummaryText').innerHTML = 
-                `<div style="margin-bottom:4px;">현재 조회된 총 <span style="font-weight:700;">${totalCount}</span>개 발전소 중</div>` +
+                `<div style="margin-bottom:4px;">현재 조회된 총 <span style="font-weight:700;">${totalCount}</span>개 발전소(배전망 포함) 중</div>` +
                 `<div style="color:var(--stat-color);">• 성공 <span style="font-weight:700;">${addrSuccess}건 (${succPct}%)</span> : 지도에 표시됨</div>` +
                 `<div style="color:#FF6B6B;">• 실패 <span style="font-weight:700;">${addrFail}건 (${failPct}%)</span> : 지도에 표시되지 않음</div>`;
 
             Chart.defaults.color = '#A0A0A0'; Chart.defaults.font.family = 'Pretendard';
-            updateScatterChart(dashboardData); updateBarChart(dashboardData);
+            
+            // 💡 [수정 내용] 배전망을 포함한 전체 데이터를 차트에 넘겨 개소수가 반영되게 합니다.
+            updateScatterChart(dashboardData); 
+            updateBarChart(dashboardData);
         }
 
         let lastChartHoverIdx = null;
